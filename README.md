@@ -116,26 +116,92 @@ stellovault/
 - PostgreSQL (for backend database)
 - Soroban CLI (for contract development)
 
-#### Quick Start
+## 🤝 Contributing: Forking & Cloning Guide
 
-1. **Clone and setup contracts:**
-   ```bash
-   cd contracts
-   cargo build --release --target wasm32-unknown-unknown
-   ```
+We welcome contributions from the community! To contribute effectively, follow these steps:
 
-2. **Setup frontend:**
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
+### 1. Fork the Repository
 
-3. **Setup backend:**
-   ```bash
-   cd server
-   cargo run
-   ```
+1. Navigate to the [StelloVault GitHub repository](https://github.com/your-org/stellovault).
+2. Click **Fork** in the top-right corner.
+3. This creates a personal copy of the repository under your GitHub account.
+
+### 2. Clone Your Fork Locally
+
+```bash
+git clone https://github.com/<your-username>/stellovault.git
+cd stellovault
+```
+
+> Replace `<your-username>` with your GitHub username.
+
+### 3. Add the Original Repository as Upstream
+
+```bash
+git remote add upstream https://github.com/your-org/stellovault.git
+git fetch upstream
+```
+
+> This allows you to pull the latest changes from the main repository.
+
+### 4. Create a Feature Branch
+
+```bash
+git checkout -b feature/awesome-feature
+```
+
+> Always branch off `main` (or `develop` if using a dev branch) and use descriptive names for your feature branches.
+
+### 5. Make Changes & Commit
+
+* Make your code changes.
+* Test thoroughly (frontend, backend, and contracts as applicable).
+* Commit changes with clear, descriptive messages:
+
+```bash
+git add .
+git commit -m "Add feature: awesome-feature description"
+```
+
+### 6. Keep Your Branch Updated
+
+```bash
+git fetch upstream
+git checkout main
+git merge upstream/main
+git checkout feature/awesome-feature
+git rebase main
+```
+
+> This ensures your branch is compatible with the latest codebase.
+
+### 7. Push Changes to Your Fork
+
+```bash
+git push origin feature/awesome-feature
+```
+
+### 8. Open a Pull Request (PR)
+
+1. Go to your fork on GitHub.
+2. Click **Compare & pull request**.
+3. Provide a descriptive title and summary of your changes.
+4. Submit the PR against the `main` branch of the original repository.
+
+### 9. Review & Iterate
+
+* Project maintainers will review your PR.
+* Address any feedback and push updates to your branch.
+* Once approved, your PR will be merged.
+
+---
+
+### Contribution Guidelines
+
+* Follow consistent coding style (Rust: `rustfmt`, JS/TS: Prettier).
+* Write tests for any new functionality.
+* Ensure all CI checks pass before submitting a PR.
+* Document new modules or features in the README or relevant docs.
 
 ### Development Workflow
 
