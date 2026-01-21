@@ -119,9 +119,12 @@ pub enum EscrowEvent {
 /// Webhook payload structure for escrow updates
 #[derive(Debug, Deserialize)]
 pub struct WebhookPayload {
+    #[serde(rename = "event_type")]
     pub _event_type: String,
     pub escrow_id: i64,
     pub status: Option<EscrowStatus>,
+    #[serde(rename = "tx_hash")]
     pub _tx_hash: Option<String>,
+    #[serde(rename = "timestamp")]
     pub _timestamp: DateTime<Utc>,
 }

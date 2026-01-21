@@ -65,7 +65,7 @@ mod tests {
         );
 
         // Test that tracking status updates database correctly
-        let escrow_id = 12345u64;
+        let escrow_id = 12345i64;
         
         let result = escrow_service.track_escrow_status(escrow_id).await;
         

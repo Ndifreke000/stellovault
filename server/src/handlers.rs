@@ -2,7 +2,7 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use serde_json::json;
@@ -65,6 +65,10 @@ pub async fn create_escrow(
         ));
     }
 
+    // Capture IDs before moving request
+    let buyer_id = request.buyer_id;
+    let seller_id = request.seller_id;
+
     // Create escrow via service
     match app_state.escrow_service.create_escrow(request).await {
         Ok(response) => {
@@ -72,8 +76,8 @@ pub async fn create_escrow(
             app_state.ws_state
                 .broadcast_event(crate::escrow::EscrowEvent::Created {
                     escrow_id: response.escrow_id,
-                    buyer_id: response.id,
-                    seller_id: response.id,
+                    buyer_id,
+                    seller_id,
                 })
                 .await;
 
@@ -149,8 +153,25 @@ pub async fn list_escrows(
 /// Webhook endpoint for escrow status updates
 pub async fn webhook_escrow_update(
     State(app_state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<crate::escrow::WebhookPayload>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<ApiResponse<()>>)> {
+    // Authenticate webhook
+    let webhook_secret = std::env::var("WEBHOOK_SECRET").unwrap_or_default();
+    let auth_header = headers.get("X-Webhook-Secret")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default();
+
+    if !webhook_secret.is_empty() && auth_header != webhook_secret {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ApiResponse {
+                success: false,
+                data: None,
+                error: Some("Unauthorized webhook request".to_string()),
+            }),
+        ));
+    }
     // Process webhook payload
     if let Some(status) = payload.status {
         let event = crate::escrow::EscrowEvent::StatusUpdated {

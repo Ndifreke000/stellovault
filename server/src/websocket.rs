@@ -10,7 +10,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use uuid::Uuid;
 
 use crate::escrow::EscrowEvent;
@@ -112,39 +112,54 @@ async fn handle_socket(socket: WebSocket, state: WsState) {
 
     let (mut sender, mut receiver) = socket.split();
 
+    // Internal channel for sending messages from recv_task to sender
+    let (internal_tx, mut internal_rx) = mpsc::channel::<ServerMessage>(32);
+
     // Subscribe to broadcast channel
     let mut rx = state.tx.subscribe();
     let client_id_clone = client_id.clone();
     let state_clone = state.clone();
 
-    // Spawn task to forward broadcast events to this client
+    // Spawn task to forward broadcast events and internal messages to this client
     let mut send_task = tokio::spawn(async move {
-        while let Ok(event) = rx.recv().await {
-            // Check if client is subscribed to this escrow
-            let clients = state_clone.clients.read().await;
-            if let Some(client_info) = clients.get(&client_id_clone) {
-                // If subscribed to all or specific escrow
-                let should_send = match &event {
-                    EscrowEvent::Created { escrow_id, .. }
-                    | EscrowEvent::Activated { escrow_id }
-                    | EscrowEvent::Released { escrow_id }
-                    | EscrowEvent::Cancelled { escrow_id }
-                    | EscrowEvent::TimedOut { escrow_id }
-                    | EscrowEvent::Disputed { escrow_id, .. }
-                    | EscrowEvent::StatusUpdated { escrow_id, .. } => {
-                        client_info.subscribed_escrows.is_empty()
-                            || client_info.subscribed_escrows.contains(escrow_id)
-                    }
-                };
+        loop {
+            tokio::select! {
+                // Handle broadcast events
+                Ok(event) = rx.recv() => {
+                    let clients = state_clone.clients.read().await;
+                    if let Some(client_info) = clients.get(&client_id_clone) {
+                        let should_send = match &event {
+                            EscrowEvent::Created { escrow_id, .. }
+                            | EscrowEvent::Activated { escrow_id }
+                            | EscrowEvent::Released { escrow_id }
+                            | EscrowEvent::Cancelled { escrow_id }
+                            | EscrowEvent::TimedOut { escrow_id }
+                            | EscrowEvent::Disputed { escrow_id, .. }
+                            | EscrowEvent::StatusUpdated { escrow_id, .. } => {
+                                client_info.subscribed_escrows.is_empty()
+                                    || client_info.subscribed_escrows.contains(escrow_id)
+                            }
+                        };
 
-                if should_send {
-                    let msg = ServerMessage::Event { event };
+                        if should_send {
+                            let msg = ServerMessage::Event { event };
+                            if let Ok(text) = serde_json::to_string(&msg) {
+                                if sender.send(Message::Text(text)).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                // Handle internal messages (confirmations, pongs)
+                Some(msg) = internal_rx.recv() => {
                     if let Ok(text) = serde_json::to_string(&msg) {
                         if sender.send(Message::Text(text)).await.is_err() {
                             break;
                         }
                     }
                 }
+                else => break,
             }
         }
     });
@@ -160,10 +175,8 @@ async fn handle_socket(socket: WebSocket, state: WsState) {
                         ClientMessage::Subscribe { escrow_ids } => {
                             state_recv.update_subscriptions(&client_id_recv, escrow_ids.clone()).await;
                             let response = ServerMessage::Subscribed { escrow_ids };
-                            if let Ok(_json) = serde_json::to_string(&response) {
-                                // Send confirmation (in production, handle errors properly)
-                                tracing::info!("Client {} subscribed", client_id_recv);
-                            }
+                            let _ = internal_tx.send(response).await;
+                            tracing::info!("Client {} subscribed", client_id_recv);
                         }
                         ClientMessage::Unsubscribe { escrow_ids } => {
                             // Remove specific subscriptions
@@ -175,13 +188,13 @@ async fn handle_socket(socket: WebSocket, state: WsState) {
                                 state_recv.update_subscriptions(&client_id_recv, current).await;
                             }
                             let response = ServerMessage::Unsubscribed { escrow_ids };
-                            if let Ok(_json) = serde_json::to_string(&response) {
-                                tracing::info!("Client {} unsubscribed", client_id_recv);
-                            }
+                            let _ = internal_tx.send(response).await;
+                            tracing::info!("Client {} unsubscribed", client_id_recv);
                         }
                         ClientMessage::Ping => {
                             // Respond with pong (keepalive)
                             tracing::debug!("Ping from client {}", client_id_recv);
+                            let _ = internal_tx.send(ServerMessage::Pong).await;
                         }
                     }
                 }

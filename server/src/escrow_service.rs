@@ -3,6 +3,7 @@
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use sqlx::PgPool;
+use rand::Rng;
 use uuid::Uuid;
 
 use crate::escrow::{
@@ -276,7 +277,7 @@ impl EscrowService {
         );
 
         // Simulated response
-        let escrow_id = rand::random::<i64>() % 100000;
+        let escrow_id = rand::thread_rng().gen_range(1..i64::MAX);
         let tx_hash = format!("sim_{}", Uuid::new_v4().to_string().replace("-", ""));
 
         tracing::warn!("Using simulated on-chain escrow creation - implement Soroban SDK integration");

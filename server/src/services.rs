@@ -19,17 +19,6 @@ impl UserService {
 }
 
 #[allow(dead_code)]
-pub struct EscrowService;
-
-#[allow(dead_code)]
-impl EscrowService {
-    pub async fn get_active_escrows() -> Result<Vec<String>, String> {
-        // TODO: Implement escrow service
-        Err("Not implemented yet".to_string())
-    }
-}
-
-#[allow(dead_code)]
 pub struct AnalyticsService;
 
 #[allow(dead_code)]

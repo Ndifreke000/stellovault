@@ -11,7 +11,8 @@ use axum::{
 use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
+use axum::http::{HeaderValue, Method};
 
 mod app_state;
 mod escrow;
@@ -45,26 +46,13 @@ async fn main() {
 
     // Initialize database connection pool
     tracing::info!("Connecting to database...");
-    let db_pool = match PgPoolOptions::new()
+    let db_pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
         .await
-    {
-        Ok(pool) => {
-            tracing::info!("Database connected successfully");
-            pool
-        }
-        Err(e) => {
-            tracing::error!("Failed to connect to database: {}", e);
-            tracing::warn!("Running without database - endpoints will fail");
-            // Create a dummy pool that will fail on use
-            PgPoolOptions::new()
-                .max_connections(1)
-                .connect("postgresql://localhost/nonexistent")
-                .await
-                .expect("Database connection required")
-        }
-    };
+        .expect("Failed to connect to database");
+    
+    tracing::info!("Database connected successfully");
 
     // Initialize WebSocket state
     let ws_state = websocket::WsState::new();
@@ -106,7 +94,7 @@ async fn main() {
         .merge(routes::escrow_routes())
         .merge(routes::analytics_routes())
         .with_state(app_state)
-        .layer(CorsLayer::permissive()); // TODO: Configure CORS properly
+        .layer(configure_cors());
 
     // Get port from environment or default to 3001
     let port = std::env::var("PORT")
@@ -129,4 +117,23 @@ async fn root() -> &'static str {
 
 async fn health_check() -> &'static str {
     "OK"
+}
+
+fn configure_cors() -> CorsLayer {
+    let allowed_origins_str = std::env::var("CORS_ALLOWED_ORIGINS").unwrap_or_default();
+    
+    if allowed_origins_str.is_empty() {
+        tracing::warn!("CORS_ALLOWED_ORIGINS not set, allowing all origins (permissive)");
+        return CorsLayer::permissive();
+    }
+
+    let origins: Vec<HeaderValue> = allowed_origins_str
+        .split(',')
+        .map(|s| s.trim().parse().expect("Invalid CORS origin"))
+        .collect();
+
+    CorsLayer::new()
+        .allow_origin(origins)
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+        .allow_headers(Any)
 }
