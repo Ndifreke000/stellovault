@@ -157,20 +157,35 @@ pub async fn webhook_escrow_update(
     Json(payload): Json<crate::escrow::WebhookPayload>,
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<ApiResponse<()>>)> {
     // Authenticate webhook
-    let webhook_secret = std::env::var("WEBHOOK_SECRET").unwrap_or_default();
-    let auth_header = headers.get("X-Webhook-Secret")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or_default();
+    match &app_state.webhook_secret {
+        Some(secret) if !secret.is_empty() => {
+            let auth_header = headers.get("X-Webhook-Secret")
+                .and_then(|h| h.to_str().ok())
+                .unwrap_or_default();
 
-    if !webhook_secret.is_empty() && auth_header != webhook_secret {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some("Unauthorized webhook request".to_string()),
-            }),
-        ));
+            if auth_header != secret {
+                return Err((
+                    StatusCode::UNAUTHORIZED,
+                    Json(ApiResponse {
+                        success: false,
+                        data: None,
+                        error: Some("Unauthorized webhook request".to_string()),
+                    }),
+                ));
+            }
+        }
+        _ => {
+            // Fail-closed: if secret is not configured or empty, reject all requests
+            tracing::error!("Webhook secret not configured - rejecting request");
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ApiResponse {
+                    success: false,
+                    data: None,
+                    error: Some("Webhook endpoint is not configured".to_string()),
+                }),
+            ));
+        }
     }
     // Process webhook payload
     if let Some(status) = payload.status {

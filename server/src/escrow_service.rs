@@ -46,11 +46,14 @@ impl EscrowService {
             .map(|hours| Utc::now() + Duration::hours(hours));
 
         // Create escrow on-chain via Soroban contract
+        let token_id_u64 = collateral.token_id.parse::<u64>()
+            .map_err(|e| anyhow::anyhow!("Invalid token_id: {}. Error: {}", collateral.token_id, e))?;
+
         let (escrow_id, tx_hash) = self
             .create_on_chain_escrow(
                 &request.buyer_id,
                 &request.seller_id,
-                collateral.token_id.parse::<u64>().unwrap_or(0),
+                token_id_u64,
                 request.amount,
                 &request.oracle_address,
                 &request.release_conditions,
@@ -138,26 +141,29 @@ impl EscrowService {
         let limit = query.limit.unwrap_or(20).clamp(1, 100);
         let offset = (page - 1) * limit;
 
-        let mut sql = String::from("SELECT * FROM escrows WHERE 1=1");
-        let mut params: Vec<String> = vec![];
+        let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = 
+            sqlx::QueryBuilder::new("SELECT * FROM escrows WHERE 1=1");
 
         if let Some(status) = query.status {
-            params.push(format!("status = '{:?}'", status).to_lowercase());
+            query_builder.push(" AND status = ");
+            query_builder.push_bind(status);
         }
         if let Some(buyer_id) = query.buyer_id {
-            params.push(format!("buyer_id = '{}'", buyer_id));
+            query_builder.push(" AND buyer_id = ");
+            query_builder.push_bind(buyer_id);
         }
         if let Some(seller_id) = query.seller_id {
-            params.push(format!("seller_id = '{}'", seller_id));
+            query_builder.push(" AND seller_id = ");
+            query_builder.push_bind(seller_id);
         }
 
-        if !params.is_empty() {
-            sql.push_str(&format!(" AND {}", params.join(" AND ")));
-        }
+        query_builder.push(" ORDER BY created_at DESC LIMIT ");
+        query_builder.push_bind(limit as i64);
+        query_builder.push(" OFFSET ");
+        query_builder.push_bind(offset as i64);
 
-        sql.push_str(&format!(" ORDER BY created_at DESC LIMIT {} OFFSET {}", limit, offset));
-
-        let escrows = sqlx::query_as::<_, Escrow>(&sql)
+        let escrows = query_builder
+            .build_query_as::<Escrow>()
             .fetch_all(&self.db_pool)
             .await?;
 

@@ -43,6 +43,7 @@ async fn main() {
         .unwrap_or_else(|_| "Test SDF Network ; September 2015".to_string());
     let contract_id = std::env::var("CONTRACT_ID")
         .unwrap_or_else(|_| "STELLOVAULT_CONTRACT_ID".to_string());
+    let webhook_secret = std::env::var("WEBHOOK_SECRET").ok();
 
     // Initialize database connection pool
     tracing::info!("Connecting to database...");
@@ -65,7 +66,11 @@ async fn main() {
     ));
 
     // Create shared app state
-    let app_state = AppState::new(escrow_service.clone(), ws_state.clone());
+    let app_state = AppState::new(
+        escrow_service.clone(),
+        ws_state.clone(),
+        webhook_secret,
+    );
 
     // Start event listener in background
     let event_listener = event_listener::EventListener::new(
@@ -76,14 +81,19 @@ async fn main() {
         db_pool.clone(),
     );
     tokio::spawn(async move {
+        tracing::info!("Event listener task started");
         event_listener.start().await;
+        tracing::error!("Event listener task exited unexpectedly");
     });
 
     // Start timeout detector in background
-    tokio::spawn(event_listener::timeout_detector(
-        escrow_service.clone(),
-        ws_state.clone(),
-    ));
+    let escrow_service_timeout = escrow_service.clone();
+    let ws_state_timeout = ws_state.clone();
+    tokio::spawn(async move {
+        tracing::info!("Timeout detector task started");
+        event_listener::timeout_detector(escrow_service_timeout, ws_state_timeout).await;
+        tracing::error!("Timeout detector task exited unexpectedly");
+    });
 
     // Create the app router
     let app = Router::new()

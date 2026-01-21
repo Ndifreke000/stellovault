@@ -49,8 +49,8 @@ mod tests {
         // Create escrow
         let response = escrow_service.create_escrow(request).await;
         
-        // This will fail without proper database setup, but demonstrates the test structure
-        assert!(response.is_ok() || response.is_err());
+        // Verify creation was successful
+        assert!(response.is_ok(), "Escrow creation should succeed in simulation");
     }
 
     #[tokio::test]
@@ -125,8 +125,8 @@ mod tests {
         
         match result {
             Ok(timed_out_escrows) => {
-                // Verify it returns a list (even if empty)
-                assert!(timed_out_escrows.len() >= 0);
+                // Verify it returns an empty list in a fresh simulation
+                assert_eq!(timed_out_escrows.len(), 0, "Expected 0 timed out escrows in fresh simulation, found {}", timed_out_escrows.len());
             }
             Err(_) => {
                 // Expected if database is not set up

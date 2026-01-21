@@ -12,13 +12,19 @@ use axum::extract::FromRef;
 pub struct AppState {
     pub escrow_service: Arc<EscrowService>,
     pub ws_state: WsState,
+    pub webhook_secret: Option<String>,
 }
 
 impl AppState {
-    pub fn new(escrow_service: Arc<EscrowService>, ws_state: WsState) -> Self {
+    pub fn new(
+        escrow_service: Arc<EscrowService>,
+        ws_state: WsState,
+        webhook_secret: Option<String>,
+    ) -> Self {
         Self {
             escrow_service,
             ws_state,
+            webhook_secret,
         }
     }
 }
