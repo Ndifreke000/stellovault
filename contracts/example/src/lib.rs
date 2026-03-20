@@ -286,7 +286,8 @@ impl StelloVaultContract {
             .unwrap_or(0);
 
         // Check for math overflow during LTV calculation
-        let adjusted_value = collateral.asset_value
+        let adjusted_value = collateral
+            .asset_value
             .checked_mul(max_ltv as i128)
             .ok_or(ContractError::MathOverflow)?;
 

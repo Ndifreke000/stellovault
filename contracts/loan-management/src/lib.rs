@@ -5,7 +5,9 @@
 
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, IntoVal, Symbol, Val};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, symbol_short, Address, Env, IntoVal, Symbol, Val,
+};
 
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -542,12 +544,10 @@ impl LoanManagement {
             // before this call, either by the borrower or automatically
             let deposit_args: soroban_sdk::Vec<Val> = soroban_sdk::Vec::from_array(
                 &env,
-                [
-                    loan.lender.into_val(&env),
-                    fee_amount.into_val(&env),
-                ],
+                [loan.lender.into_val(&env), fee_amount.into_val(&env)],
             );
-            let _: () = env.invoke_contract(&treasury, &Symbol::new(&env, "deposit_fee"), deposit_args);
+            let _: () =
+                env.invoke_contract(&treasury, &Symbol::new(&env, "deposit_fee"), deposit_args);
 
             fee_amount
         } else {

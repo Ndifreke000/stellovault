@@ -2322,7 +2322,10 @@ mod test {
             RiskAssessment::set_test_position(env.clone(), loan_id, loan, collateral, escrow);
 
             let result = RiskAssessment::start_auction(env.clone(), loan_id);
-            assert!(matches!(result, Err(ContractError::PositionNotLiquidatable)));
+            assert!(matches!(
+                result,
+                Err(ContractError::PositionNotLiquidatable)
+            ));
         });
     }
 

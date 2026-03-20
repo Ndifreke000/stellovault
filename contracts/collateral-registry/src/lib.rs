@@ -563,8 +563,7 @@ mod test {
 
         let future_ts = env.ledger().timestamp() + 86400;
         let metadata_hash = BytesN::from_array(&env, &[1; 32]);
-        let collateral_id = client
-            .register_collateral(&owner, &1000, &future_ts, &metadata_hash);
+        let collateral_id = client.register_collateral(&owner, &1000, &future_ts, &metadata_hash);
 
         client.lock_collateral(&collateral_id);
         assert!(client.is_locked(&collateral_id));

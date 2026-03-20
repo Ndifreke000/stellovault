@@ -452,7 +452,6 @@ impl EscrowManager {
         let treasury_opt: Option<Address> =
             env.storage().instance().get(&symbol_short!("treasury"));
         let _protocol_fee = if let Some(treasury) = treasury_opt {
-
             // Query fee_bps from ProtocolTreasury
             let fee_bps_args: soroban_sdk::Vec<Val> = soroban_sdk::Vec::new(&env);
             let fee_bps: u32 =
@@ -467,12 +466,10 @@ impl EscrowManager {
                 // before this call, either deducted from the payment or transferred separately
                 let deposit_args: soroban_sdk::Vec<Val> = soroban_sdk::Vec::from_array(
                     &env,
-                    [
-                        escrow.asset.into_val(&env),
-                        fee_amount.into_val(&env),
-                    ],
+                    [escrow.asset.into_val(&env), fee_amount.into_val(&env)],
                 );
-                let _: () = env.invoke_contract(&treasury, &Symbol::new(&env, "deposit_fee"), deposit_args);
+                let _: () =
+                    env.invoke_contract(&treasury, &Symbol::new(&env, "deposit_fee"), deposit_args);
 
                 // Emit fee collection event
                 env.events().publish(
@@ -769,9 +766,10 @@ mod test {
             )
         };
         let oracle_client = unsafe {
-            core::mem::transmute::<MockOracleAdapterWithConsensusClient<'_>, MockOracleAdapterWithConsensusClient<'static>>(
-                oracle_client,
-            )
+            core::mem::transmute::<
+                MockOracleAdapterWithConsensusClient<'_>,
+                MockOracleAdapterWithConsensusClient<'static>,
+            >(oracle_client)
         };
 
         TestEnv {
@@ -831,7 +829,6 @@ mod test {
         client.set_confirmation(&escrow_id_bytes, &confs);
     }
 
-
     // -- Tests ------------------------------------------------------------
 
     #[test]
@@ -863,7 +860,8 @@ mod test {
         let t = setup();
         let admin = Address::generate(&t.env);
         let dummy = Address::generate(&t.env);
-        t.escrow_client.initialize(&admin, &dummy, &dummy, &dummy, &dummy);
+        t.escrow_client
+            .initialize(&admin, &dummy, &dummy, &dummy, &dummy);
     }
 
     #[test]
@@ -1439,11 +1437,10 @@ mod test {
         );
 
         // Release should fail - only 1 authorized confirmation
-        assert!(
-            t.escrow_client
-                .try_release_funds_on_confirmation(&escrow_id)
-                .is_err()
-        );
+        assert!(t
+            .escrow_client
+            .try_release_funds_on_confirmation(&escrow_id)
+            .is_err());
 
         // Add the second authorized confirmation
         set_multi_oracle_confirmations(
