@@ -1466,7 +1466,7 @@ mod test {
         let dest_token_addr = dest_token_contract.address();
         let dest_token_admin_client = token::StellarAssetClient::new(&t.env, &dest_token_addr);
 
-        // Mint destination tokens to the escrow contract for the swap
+        // Mint destination tokens to the escrow contract to simulate DEX liquidity
         dest_token_admin_client.mint(&t.escrow_id_addr, &10_000);
 
         // Create escrow with different destination asset
@@ -1486,7 +1486,7 @@ mod test {
             oracle_set: Vec::new(&t.env),
         });
 
-        // Set exchange rate: 0.95 (5% loss in conversion)
+        // Set exchange rate: 0.95 (5% slippage) → dest_amount = 4750 ≥ min 4500
         t.escrow_client.set_test_exchange_rate(&950_000i128);
 
         // Set oracle confirmation
@@ -1497,8 +1497,13 @@ mod test {
 
         let escrow = t.escrow_client.get_escrow(&escrow_id).unwrap();
         assert_eq!(escrow.status, EscrowStatus::Released);
+        // Seller must receive destination tokens (not source tokens)
         let dest_token = token::Client::new(&t.env, &dest_token_addr);
-        assert_eq!(dest_token.balance(&t.seller), 4_750);
+        assert_eq!(dest_token.balance(&t.seller), 4_750); // 5000 * 0.95
+
+        // Seller must NOT receive source tokens
+        let src_token = token::Client::new(&t.env, &t.token_addr);
+        assert_eq!(src_token.balance(&t.seller), 0);
     }
 
     #[test]
