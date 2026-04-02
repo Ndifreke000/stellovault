@@ -5,8 +5,7 @@ use stellar_xdr::next::{ScVal, Limits, ReadXdr};
 use tracing::info;
 use uuid::Uuid;
 
-use crate::websocket::WsState;
-use crate::escrow::EscrowEvent as WsEscrowEvent;
+use crate::websocket::{WsState, WsEvent, EscrowEvent as WsEscrowEvent, LoanEvent as WsLoanEvent};
 use super::types::SorobanEvent;
 
 pub struct EventHandler {
@@ -130,11 +129,16 @@ impl EventHandler {
                         .await?;
 
                         if let Some(ws) = &self.ws_state {
-                            ws.broadcast_event(WsEscrowEvent::Created { 
-                                escrow_id: id as i64,
-                                buyer_id: bid,
-                                seller_id: sid
-                            }).await;
+                            let escrow_id = id as i64;
+                            let room = format!("escrow:{}", escrow_id);
+                            ws.broadcast_to_room(&room, WsEvent::Escrow(WsEscrowEvent::Created { 
+                                escrow_id,
+                                data: serde_json::json!({
+                                    "buyer_id": bid,
+                                    "seller_id": sid,
+                                    "amount": amount
+                                })
+                            })).await;
                         }
                     } else {
                         info!("Buyer or Seller not found for escrow {}", id);
@@ -153,7 +157,9 @@ impl EventHandler {
                     .await?;
 
                     if let Some(ws) = &self.ws_state {
-                        ws.broadcast_event(WsEscrowEvent::Activated { escrow_id: id as i64 }).await;
+                        let escrow_id = id as i64;
+                        let room = format!("escrow:{}", escrow_id);
+                        ws.broadcast_to_room(&room, WsEvent::Escrow(WsEscrowEvent::Activated { escrow_id })).await;
                     }
                 }
             },
@@ -169,10 +175,71 @@ impl EventHandler {
                     .await?;
                     
                     if let Some(ws) = &self.ws_state {
-                        ws.broadcast_event(WsEscrowEvent::Released { escrow_id: id as i64 }).await;
+                        let escrow_id = id as i64;
+                        let room = format!("escrow:{}", escrow_id);
+                        ws.broadcast_to_room(&room, WsEvent::Escrow(WsEscrowEvent::Released { 
+                            escrow_id,
+                            released_by: "contract".to_string()
+                        })).await;
                     }
                 }
             },
+            "esc_disp" => {
+                if let ScVal::Vec(Some(args)) = data {
+                    if args.len() < 2 {
+                        return Err(anyhow!("Invalid args length for esc_disp"));
+                    }
+                    let id = scval_to_u64(&args[0])?;
+                    let _disputer = scval_to_address(&args[1])?;
+
+                    sqlx::query(
+                        "UPDATE escrows SET status = 'disputed'::escrow_status, disputed = true WHERE escrow_id = $1"
+                    )
+                    .bind(id as i64)
+                    .execute(&self.pool)
+                    .await?;
+
+                    if let Some(ws) = &self.ws_state {
+                        ws.broadcast_event(WsEscrowEvent::Disputed {
+                            escrow_id: id as i64,
+                            reason: "on-chain dispute raised".to_string(),
+                        })
+                        .await;
+                    }
+                }
+            }
+            "esc_rslv" => {
+                if let ScVal::Vec(Some(args)) = data {
+                    if args.len() < 2 {
+                        return Err(anyhow!("Invalid args length for esc_rslv"));
+                    }
+                    let id = scval_to_u64(&args[0])?;
+                    let decision_raw = scval_to_u64(&args[1])?;
+
+                    // DisputeDecision: 0=ReleaseToSeller, 1=RefundToBuyer
+                    let new_status = match decision_raw {
+                        0 => "released",
+                        1 => "refunded",
+                        _ => return Err(anyhow!("Invalid dispute decision value")),
+                    };
+
+                    sqlx::query(
+                        "UPDATE escrows SET status = $1::escrow_status, disputed = false WHERE escrow_id = $2"
+                    )
+                    .bind(new_status)
+                    .bind(id as i64)
+                    .execute(&self.pool)
+                    .await?;
+
+                    if let Some(ws) = &self.ws_state {
+                        match decision_raw {
+                            0 => ws.broadcast_event(WsEscrowEvent::Released { escrow_id: id as i64 }).await,
+                            1 => ws.broadcast_event(WsEscrowEvent::Refunded { escrow_id: id as i64 }).await,
+                            _ => {}
+                        }
+                    }
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -181,8 +248,64 @@ impl EventHandler {
     async fn handle_loan_event(&self, name: &str, data: &ScVal) -> Result<()> {
         match name {
             "loan_iss" => {
-                info!("Loan issuance event received: {:?}", data);
-                // TODO: Implement loan issuance handling when schema is confirmed
+                if let ScVal::Vec(Some(args)) = data {
+                    if args.len() < 3 { return Err(anyhow!("Invalid args length for loan_iss")); }
+                    let loan_id = scval_to_u64(&args[0])?;
+                    let borrower = scval_to_address(&args[1])?;
+                    let amount = scval_to_i128(&args[2])?;
+
+                    if let Some(ws) = &self.ws_state {
+                        let room = format!("loan:{}", loan_id);
+                        ws.broadcast_to_room(&room, WsEvent::Loan(WsLoanEvent::Created {
+                            loan_id: loan_id as i64,
+                            data: serde_json::json!({
+                                "borrower": borrower,
+                                "amount": amount
+                            })
+                        })).await;
+                    }
+                    info!("Loan issuance event processed: loan_id={}", loan_id);
+                }
+            },
+            "loan_funded" => {
+                if let ScVal::Vec(Some(args)) = data {
+                    if args.is_empty() { return Err(anyhow!("Invalid args length for loan_funded")); }
+                    let loan_id = scval_to_u64(&args[0])?;
+
+                    if let Some(ws) = &self.ws_state {
+                        let room = format!("loan:{}", loan_id);
+                        ws.broadcast_to_room(&room, WsEvent::Loan(WsLoanEvent::Funded { loan_id: loan_id as i64 })).await;
+                    }
+                    info!("Loan funded event processed: loan_id={}", loan_id);
+                }
+            },
+            "loan_repaid" => {
+                if let ScVal::Vec(Some(args)) = data {
+                    if args.len() < 2 { return Err(anyhow!("Invalid args length for loan_repaid")); }
+                    let loan_id = scval_to_u64(&args[0])?;
+                    let amount = scval_to_i128(&args[1])?;
+
+                    if let Some(ws) = &self.ws_state {
+                        let room = format!("loan:{}", loan_id);
+                        ws.broadcast_to_room(&room, WsEvent::Loan(WsLoanEvent::Repaid { 
+                            loan_id: loan_id as i64,
+                            amount: amount.to_string()
+                        })).await;
+                    }
+                    info!("Loan repaid event processed: loan_id={}", loan_id);
+                }
+            },
+            "loan_defaulted" => {
+                if let ScVal::Vec(Some(args)) = data {
+                    if args.is_empty() { return Err(anyhow!("Invalid args length for loan_defaulted")); }
+                    let loan_id = scval_to_u64(&args[0])?;
+
+                    if let Some(ws) = &self.ws_state {
+                        let room = format!("loan:{}", loan_id);
+                        ws.broadcast_to_room(&room, WsEvent::Loan(WsLoanEvent::Defaulted { loan_id: loan_id as i64 })).await;
+                    }
+                    info!("Loan defaulted event processed: loan_id={}", loan_id);
+                }
             },
             _ => {}
         }
